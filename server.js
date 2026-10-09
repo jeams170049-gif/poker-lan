@@ -11,6 +11,7 @@ const DATA_DIR = process.env.POKER_DATA || path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'players.json');
 const PUB = path.join(__dirname, 'public');
 
+const REFILL_WAIT = 5 * 60 * 1000;
 const START_CHIPS = 1000000, REFILL_TO = 200000, REFILL_BELOW = 20000, MAXSEATS = 7;
 const SB = 5000, BB = 10000;           // 홀덤 블라인드
 const ANTE = 10000, RAISE_CAP = 4;     // 섯다 판돈 / 한 라운드 최대 레이즈 횟수
@@ -252,7 +253,7 @@ class Table {
       you: v.idx, hand: this.hand, msg: this.msg, big: this.big, pot, showdown: this.showdown,
       seats: this.seats.map(s => s ? this.seatView(s, v) : null),
       turn: pd ? this.turnView(pd) : null, logs: this.logs.slice(-9), minChips: this.minChips,
-      me: { nick: v.nick, chips: v.chips, sitOut: v.sitOut, canRefill: v.chips < REFILL_BELOW && !(v.inHand && this.handActive && !v.folded) }
+      me: { nick: v.nick, chips: v.chips, sitOut: v.sitOut, canRefill: v.chips < REFILL_BELOW && !(v.inHand && this.handActive && !v.folded) && refillWait(v.nick, v.chips) === 0, refillWait: (v.chips < REFILL_BELOW && !(v.inHand && this.handActive && !v.folded)) ? Math.ceil(refillWait(v.nick, v.chips) / 1000) : 0 }
     };
   }
   baseSeat(s) {
@@ -612,6 +613,16 @@ class SeotdaTable extends Table {
   new SeotdaTable({ id: 's3', mode: 3, name: '섯다 · 3장', desc: '판돈 10,000 · 1장 공개 → 베팅 → 3번째 패 → 베팅' }),
 ].forEach(t => TABLES.set(t.id, t));
 
+/* ===================== 충전 대기 ===================== */
+function refillWait(nick, chips) {
+  const rec = DB.players[nick]; if (!rec) return 0;
+  if (chips >= REFILL_BELOW) { if (rec.brokeAt) { rec.brokeAt = 0; saveDB(); } return 0; }
+  if (!rec.brokeAt) {
+    rec.brokeAt = Date.now(); saveDB();
+    setTimeout(() => { pushLobby(); for (const t of TABLES.values()) { try { t.broadcast(); } catch (e) { } } }, REFILL_WAIT + 800);
+  }
+  return Math.max(0, rec.brokeAt + REFILL_WAIT - Date.now());
+}
 /* ===================== 로비 ===================== */
 function lobbyFor(sess) {
   const rec = DB.players[sess.nick] || {};
@@ -620,7 +631,7 @@ function lobbyFor(sess) {
     .sort((a, b) => b.chips - a.chips).slice(0, 10);
   const chips = chipsOf(sess.nick);
   return {
-    t: 'lobby', me: { nick: sess.nick, chips, hands: rec.hands || 0, wins: rec.wins || 0, best: rec.best || 0, canRefill: chips < REFILL_BELOW },
+    t: 'lobby', me: { nick: sess.nick, chips, hands: rec.hands || 0, wins: rec.wins || 0, best: rec.best || 0, canRefill: chips < REFILL_BELOW && refillWait(sess.nick, chips) === 0, refillWait: chips < REFILL_BELOW ? Math.ceil(refillWait(sess.nick, chips) / 1000) : 0 },
     rooms, rank, online: [...sessions.values()].filter(s => s.res).length
   };
 }
@@ -634,12 +645,17 @@ function sendView(sess) {
 }
 
 /* ===================== API ===================== */
-function doLogin(b) {
+function doLogin(b, ip) {
   const nick = String(b.nick || '').trim().replace(/\s+/g, ' ');
   if (!/^[\p{L}\p{N}_\-. ]{1,10}$/u.test(nick)) return { status: 400, obj: { err: '닉네임은 1~10자(한글/영문/숫자)로 입력하세요' } };
   const pinH = b.pin ? hash(String(b.pin).slice(0, 20)) : '';
   let rec = DB.players[nick];
-  if (!rec) rec = DB.players[nick] = { nick, pin: pinH, chips: START_CHIPS, hands: 0, wins: 0, best: 0, refills: 0, created: Date.now(), last: Date.now() };
+  if (!rec) {
+    if (!ip) return { status: 400, obj: { err: '기기 정보를 확인할 수 없습니다. 새로고침 후 다시 시도하세요' } };
+    const dup = Object.values(DB.players).find(r => r.ip && r.ip === ip);
+    if (dup) return { status: 403, obj: { err: '이 기기에서는 이미 계정이 있습니다. 기존 닉네임 "' + dup.nick.slice(0, 1) + '***"으로 로그인하세요 (계정은 기기당 1개)' } };
+  }
+  if (!rec) rec = DB.players[nick] = { ip, nick, pin: pinH, chips: START_CHIPS, hands: 0, wins: 0, best: 0, refills: 0, created: Date.now(), last: Date.now() };
   else if (rec.pin && rec.pin !== pinH) return { status: 403, obj: { err: 'PIN이 틀렸습니다' } };
   const token = crypto.randomBytes(12).toString('hex');
   const sess = { token, nick, res: null, table: null, seat: null, born: Date.now(), lastChat: 0 };
@@ -650,11 +666,12 @@ function doLogin(b) {
     sessions.delete(old.token);
   }
   sessions.set(token, sess); byNick.set(nick, sess);
+  if (!rec.ip) rec.ip = ip;
   rec.last = Date.now(); saveDB();
   return { status: 200, obj: { ok: true, token, nick, newbie: rec.hands === 0 && rec.chips === START_CHIPS } };
 }
-function route(p, b) {
-  if (p === '/api/login') return doLogin(b);
+function route(p, b, ip) {
+  if (p === '/api/login') return doLogin(b, ip);
   const sess = sessions.get(b.token);
   if (!sess) return { status: 401, obj: { err: '로그인이 필요합니다', relogin: true } };
   const err = m => ({ status: 200, obj: { err: m } }), ok = () => ({ status: 200, obj: { ok: true } });
@@ -688,10 +705,12 @@ function route(p, b) {
     case '/api/refill': {
       const rec = DB.players[sess.nick], s = sess.seat;
       const cur = s ? s.chips : rec.chips;
+      const w = refillWait(sess.nick, cur);
+      if (cur < REFILL_BELOW && w > 0) return err('충전까지 ' + Math.floor(Math.ceil(w / 1000) / 60) + '분 ' + (Math.ceil(w / 1000) % 60) + '초 남았습니다');
       if (cur >= REFILL_BELOW) return err('칩이 ' + REFILL_BELOW.toLocaleString('ko-KR') + ' 미만일 때만 충전할 수 있습니다');
       if (s && s.inHand && sess.table.handActive && !s.folded) return err('판이 끝난 뒤 충전하세요');
       if (s) s.chips = REFILL_TO;
-      rec.chips = REFILL_TO; rec.refills = (rec.refills || 0) + 1; saveDB();
+      rec.chips = REFILL_TO; rec.brokeAt = 0; rec.refills = (rec.refills || 0) + 1; saveDB();
       if (s) { sess.table.log(`${sess.nick} 칩 충전 (${REFILL_TO.toLocaleString('ko-KR')})`); sess.table.poke(); sess.table.broadcast(); } else pushLobby();
       sendView(sess); return ok();
     }
@@ -737,7 +756,7 @@ function handle(req, res) {
     req.on('end', () => {
       if (big) return json(res, 413, { err: 'too large' });
       let b = {}; try { b = JSON.parse(body || '{}'); } catch (e) { return json(res, 400, { err: 'bad json' }); }
-      let r; try { r = route(p, b); } catch (e) { console.error(e); r = { status: 500, obj: { err: '서버 오류' } }; }
+      let r; try { r = route(p, b, String(b.dev || '').replace(/[^\w-]/g, '').slice(0, 64)); } catch (e) { console.error(e); r = { status: 500, obj: { err: '서버 오류' } }; }
       json(res, r.status, r.obj);
     });
     return;
