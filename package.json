@@ -1,0 +1,9 @@
+{
+  "name": "poker-lan",
+  "version": "1.0.0",
+  "description": "같은 와이파이에서 즐기는 텍사스 홀덤 · 섯다",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=16" },
+  "license": "MIT"
+}
