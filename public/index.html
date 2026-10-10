@@ -232,6 +232,7 @@ const sfx={deal:()=>tone(800,.05,'square',.03),chip:()=>{tone(1400,.05,'triangle
   turn:()=>{tone(880,.12,'sine',.09);tone(1320,.15,'sine',.08,.1)},win:()=>[523,659,784,1047].forEach((f,i)=>tone(f,.2,'triangle',.09,i*.1))};
 
 /* ===================== 통신 ===================== */
+function getDev(){let d='';try{d=localStorage.getItem('pokerDev')||'';if(!d){d=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2,12));localStorage.setItem('pokerDev',d)}}catch(e){d='x'+Math.random().toString(36).slice(2,12)}return d}
 async function api(p,b){
   let j;
   try{
@@ -242,7 +243,7 @@ async function api(p,b){
   return j||{};
 }
 async function doLogin(nick,pin){
-  const j=await api('login',{nick,pin});
+  const j=await api('login',{nick,pin,dev:getDev()});
   if(j.ok){TOKEN=j.token;NICK=j.nick;PIN=pin||'';localStorage.setItem('pk_token',TOKEN);localStorage.setItem('pk_nick',NICK);localStorage.setItem('pk_pin',PIN);}
   return j;
 }
@@ -309,7 +310,7 @@ function renderLobby(m){
   });
   $('#meNm').textContent=m.me.nick;$('#meCh').textContent=fmt(m.me.chips);
   $('#meSt').innerHTML=`플레이 ${m.me.hands}판 · 승리 ${m.me.wins}회<br>최고 획득 ${fmt(m.me.best)}<br>현재 접속 ${m.online}명`;
-  $('#lobRefill').style.display=m.me.canRefill?'':'none';
+  $('#lobRefill').style.display=(m.me.canRefill||m.me.refillWait>0)?'':'none';setWait(m.me.refillWait);
   $('#rank').innerHTML=m.rank.map((r,i)=>`<tr><td>${i+1}</td><td class="${r.online?'on':''}">${esc(r.nick)}${r.online?' ●':''}</td><td>${fmt(r.chips)}</td></tr>`).join('');
   $('#addr').innerHTML=`<b>친구 초대</b><br>같은 와이파이의 친구에게 이 주소를 알려주세요.<br><b>${esc(location.host)}</b><br>(브라우저에 <b>http://${esc(location.host)}</b> 입력)`;
   $('#bRefill').classList.add('hide');
@@ -385,7 +386,7 @@ function renderTable(st){
   layout(game);
   $('#roomLbl').textContent=st.room.name+' · '+st.room.desc;
   $('#myChips').textContent='💰 '+fmt(st.me.chips);
-  $('#bRefill').classList.toggle('hide',!st.me.canRefill);
+  $('#bRefill').classList.toggle('hide',!(st.me.canRefill||st.me.refillWait>0));setWait(st.me.refillWait);
   $('#potv').textContent=fmt(st.pot);
   const mg=$('#msg');mg.textContent=st.msg||'';mg.className=st.big?'big':'';
   $('#modeTag').textContent=game==='seotda'?(st.mode+'장섯다'+(st.rematch?` · 재경기 ${st.rematch}회`:'')+(st.hand&&!st.showdown&&st.round?` · ${st.round}구`:'')):'';
@@ -476,6 +477,7 @@ function renderBar(st){
     if(me.chips>=st.minChips)mkBtn('다시 참여','','ok',async()=>{const j=await api('sitin');if(j.err)toast(j.err)});
   }else hintEl.textContent=st.seats[st.you]&&st.seats[st.you].folded?'다음 판을 기다리는 중…':'';
   if(me.canRefill)mkBtn('💰 칩 충전','200,000','ok',async()=>{const j=await api('refill');if(j.err)toast(j.err)});
+  else if(me.refillWait>0)hintEl.textContent='칩 충전 대기 중 ⏳ '+fmtW(me.refillWait);
 }
 setInterval(()=>{
   if(!VIEW||VIEW.t!=='table'||!VIEW.turn||lastTurnSig==='')return;
@@ -502,6 +504,16 @@ $('#bLogout').onclick=()=>{TOKEN='';PIN='';localStorage.removeItem('pk_token');l
 $('#bSound').onclick=()=>{soundOn=!soundOn;localStorage.setItem('pk_snd',soundOn?'1':'0');$('#bSound').textContent=soundOn?'🔊':'🔇'};
 $('#bSound').textContent=soundOn?'🔊':'🔇';
 $('#bShape').onclick=()=>{shape=shape==='round'?'oval':'round';$('#bShape').textContent='테이블: '+MODES[shape].name;layoutKey='';if(VIEW&&VIEW.t==='table')layout(VIEW.game)};
+let waitEnd=0;
+const fmtW=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+function setWait(w){waitEnd=w>0?Date.now()+w*1000:0;tickWait()}
+function tickWait(){
+  const left=waitEnd?Math.max(0,Math.ceil((waitEnd-Date.now())/1000)):0;
+  const txt=left>0?'⏳ 충전까지 '+fmtW(left):null;
+  const lb=$('#lobRefill'),tb=$('#bRefill');
+  if(txt){lb.textContent=txt;tb.textContent=txt}else{lb.textContent='💰 칩 충전 (200,000)';tb.textContent='💰 칩 충전'}
+}
+setInterval(tickWait,1000);
 const doRefill=async()=>{const j=await api('refill');if(j.err)toast(j.err);else toast('칩이 충전되었습니다')};
 $('#bRefill').onclick=doRefill;$('#lobRefill').onclick=doRefill;
 $('#chat').addEventListener('keydown',async e=>{if(e.key==='Enter'){const v=e.target.value.trim();e.target.value='';if(v){const j=await api('chat',{text:v});if(j.err)toast(j.err)}}});
