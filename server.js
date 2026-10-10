@@ -746,6 +746,7 @@ function handle(req, res) {
       try { const html = fs.readFileSync(path.join(PUB, 'index.html')); res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(html); }
       catch (e) { res.writeHead(500); return res.end('index.html not found'); }
     }
+    if (p === '/version') { res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('v3 device-limit+refill-wait / accounts=' + Object.keys(DB.players).length); }
     if (p === '/api/events') return sse(req, res, u.searchParams.get('token'));
     if (p === '/api/ping') return json(res, 200, { ok: true, t: Date.now() });
     res.writeHead(404); return res.end('not found');
