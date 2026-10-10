@@ -666,7 +666,7 @@ function doLogin(b, ip) {
     sessions.delete(old.token);
   }
   sessions.set(token, sess); byNick.set(nick, sess);
-  if (!rec.ip) rec.ip = ip;
+  if (ip && (!rec.ip || /[.:]/.test(rec.ip))) rec.ip = ip;
   rec.last = Date.now(); saveDB();
   return { status: 200, obj: { ok: true, token, nick, newbie: rec.hands === 0 && rec.chips === START_CHIPS } };
 }
