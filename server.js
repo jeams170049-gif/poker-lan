@@ -14,7 +14,9 @@ const PUB = path.join(__dirname, 'public');
 const REFILL_WAIT = 5 * 60 * 1000;
 const START_CHIPS = 1000000, REFILL_TO = 200000, REFILL_BELOW = 20000, MAXSEATS = 7;
 const SB = 5000, BB = 10000;           // 홀덤 블라인드
-const ANTE = 10000, RAISE_CAP = 4;     // 섯다 판돈 / 한 라운드 최대 레이즈 횟수
+const ANTE = 10000, RAISE_CAP = 4;     // 섯다 판돈 / 한 라운드 최대 
+레이즈 횟수
+
 const sleep = ms => new Promise(r => setTimeout(r, ms / SPEED));
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const hash = s => crypto.createHash('sha256').update('poker-lan:' + s).digest('hex');
@@ -449,8 +451,8 @@ share));
 
 /* ===================== 섯다 ===================== */
 class SeotdaTable extends Table {
-  constructor(def) { super(Object.assign({ game: 'seotda', minChips: ANTE }, def)); this.sun = -1; this.cur = 0; this.minRaise = ANTE; this.raiseCount = 0; this.round = 1; this.rematch = 0; } 
-   potAll() { return this.players().reduce((a, s) => a + s.total, 0); }
+  constructor(def) { super(Object.assign({ game: 'seotda', minChips: ANTE }, def)); this.sun = -1; this.cur = 0; this.minRaise = ANTE; this.raiseCount = 0; this.round = 1; this.rematch = 0; }
+  potAll() { return this.players().reduce((a, s) => a + s.total, 0); }
   raiseOpts(p) {
     if (this.raiseCount >= RAISE_CAP) return [];
     const cur = this.cur, call = Math.min(cur - p.bet, p.chips), cap = p.bet + p.chips, pot = this.potAll();
@@ -909,4 +911,4 @@ if (require.main === module) {
   });
   const bye = () => { flushDB(); process.exit(0); };
   process.on('SIGINT', bye); process.on('SIGTERM', bye);
-   }
+                                         }
