@@ -1,0 +1,90 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>돌림판</title><style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,#2b1f4a,#0b0a16 70%);color:#fff;font-family:system-ui,"Malgun Gothic",sans-serif;display:flex;flex-direction:column;align-items:center;overflow-x:hidden}
+h1{margin:14px 0 4px;font-size:26px}
+.bal{font-size:18px;background:#0008;border:2px solid #ffd24a;border-radius:99px;padding:6px 18px;margin:6px 0}
+.bal b{color:#ffd24a}
+.main{display:flex;gap:22px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px}
+.betbox{display:flex;flex-direction:column;align-items:center;gap:6px;background:#0007;border-radius:16px;padding:12px 14px}
+.betbox .lbl{font-size:13px;opacity:.8}
+.betbox .val{font-size:20px;font-weight:900;color:#ffd24a;min-width:110px;text-align:center}
+.arrow{width:54px;height:40px;border-radius:10px;border:2px solid #678;background:#243;color:#fff;font-size:22px;cursor:pointer}
+.arrow:active{transform:scale(.94)}
+#bet{-webkit-appearance:slider-vertical;appearance:slider-vertical;writing-mode:vertical-lr;direction:rtl;width:40px;height:200px;accent-color:#ffd24a;cursor:pointer}
+.mark{font-size:11px;opacity:.7}
+.go{margin:10px 0;padding:14px 46px;font-size:24px;font-weight:900;border:0;border-radius:14px;background:linear-gradient(#ffd24a,#e08a00);color:#2a1500;cursor:pointer;box-shadow:0 5px 0 #8a4f00}
+.go:active{transform:translateY(3px);box-shadow:0 2px 0 #8a4f00}.go:disabled{filter:grayscale(.8);opacity:.6}
+.pay{background:#0007;border-radius:14px;padding:10px 16px;font-size:16px;line-height:1.7;min-width:170px}
+.pay h3{margin:0 0 4px;font-size:15px;color:#ffd24a}
+#msg{min-height:34px;font-size:20px;font-weight:800;text-align:center;margin:4px 10px}
+.refill{display:none;margin:6px;padding:10px 20px;border-radius:10px;border:0;background:#2e8b57;color:#fff;font-size:16px;font-weight:800;cursor:pointer}
+.back{margin:14px;color:#9ab;font-size:13px}
+.fx{position:fixed;inset:0;z-index:50;pointer-events:none;display:none}
+
+.wheelwrap{position:relative;width:min(78vw,360px);height:min(78vw,360px)}
+#wheel{width:100%;height:100%;transition:transform 4.6s cubic-bezier(.12,.7,.1,1);filter:drop-shadow(0 8px 20px #000a)}
+.ptr{position:absolute;left:50%;top:-14px;transform:translateX(-50%);font-size:40px;color:#ffd24a;text-shadow:0 2px 6px #000;z-index:2}
+.hub{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px;border-radius:50%;background:radial-gradient(#fff,#bbb);border:4px solid #333;z-index:2}
+.pay .r{display:flex;justify-content:space-between;gap:16px}
+</style></head><body>
+<h1>🎡 행운의 돌림판</h1><div class="bal" id="bal"></div>
+<div class="main">
+ <div class="wheelwrap"><div class="ptr">▼</div><div class="hub"></div>
+ <svg id="wheel" viewBox="-100 -100 200 200"></svg></div>
+ <div class="pay"><h3>배당</h3><div class="r"><span>💩 똥</span><b>0배</b></div><div class="r"><span>🪙 금</span><b>2배</b></div><div class="r"><span>💎 다이아</span><b>5배</b></div><div class="r"><span>🃏 조커</span><b>10배</b></div></div>
+ <div class="betbox"><div class="lbl">▲ 최대 1억</div><button class="arrow" id="up">▲</button><input type="range" id="bet" min="0" step="1"><button class="arrow" id="dn">▼</button><div class="lbl">▼ 최소 10만</div><div class="val" id="bv"></div><div class="mark">내기 금액</div></div>
+</div>
+<div id="msg"></div><button class="go" id="go">돌리기!</button><button class="refill" id="refill">💰 칩이 없어요! 충전</button>
+<div class="back">가상 칩 전용 · 현금 가치 없음 · 게임 칩과 같은 잔액</div>
+<script>
+const $=s=>document.querySelector(s);
+const OPT=[];for(let v=10;v<=100;v+=10)OPT.push(v*10000);for(let v=200;v<=1000;v+=100)OPT.push(v*10000);for(let v=2000;v<=10000;v+=1000)OPT.push(v*10000);
+let bal=0;let busy=false;
+const fmt=n=>{if(n>=100000000){const e=Math.floor(n/1e8),m=Math.floor(n%1e8/1e4);return e+'억'+(m?' '+m.toLocaleString()+'만':'')}return n>=10000?Math.floor(n/10000).toLocaleString()+'만':n.toLocaleString()};
+function save(){}
+async function mini(game,bet){try{const r=await fetch('/api/mini',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:localStorage.getItem('pk_token')||'',game,bet})});return await r.json()}catch(e){return{err:'서버 연결 실패'}}}
+function push(c){try{parent.postMessage({t:'chips',chips:c},'*')}catch(e){}}
+async function sync(){const j=await mini('info',0);if(j.err){$('#msg').textContent=j.err;$('#go').disabled=true;return}bal=j.chips;showBal()}
+function showBal(){$('#bal').innerHTML='🪙 <b>'+fmt(bal)+'</b> 칩';$('#refill').style.display=bal<20000?'inline-block':'none'}
+function betVal(){return OPT[+$('#bet').value]}
+function showBet(){$('#bv').textContent=fmt(betVal())}
+function step(d){if(busy)return;const e=$('#bet');e.value=Math.max(0,Math.min(OPT.length-1,+e.value+d));showBet()}
+$('#bet').max=OPT.length-1;$('#bet').value=9;$('#bet').oninput=()=>{if(!busy)showBet();else showBet()};
+$('#up').onclick=()=>step(1);$('#dn').onclick=()=>step(-1);
+$('#refill').onclick=async()=>{try{const r=await fetch('/api/refill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:localStorage.getItem('pk_token')||''})});const j=await r.json();$('#msg').textContent=j.err||'💰 칩이 충전되었습니다'}catch(e){}await sync();push(bal)};
+showBet();sync();
+/* 소리 */
+let AC=null;function ac(){if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();return AC}
+function tone(f,t,d,type,vol,fe){const a=ac(),o=a.createOscillator(),g=a.createGain();o.type=type||'sine';o.frequency.setValueAtTime(f,a.currentTime+t);if(fe)o.frequency.exponentialRampToValueAtTime(fe,a.currentTime+t+d);g.gain.setValueAtTime(vol||.2,a.currentTime+t);g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+t+d);o.connect(g);g.connect(a.destination);o.start(a.currentTime+t);o.stop(a.currentTime+t+d+.05)}
+function noise(t,d,vol){const a=ac(),b=a.createBuffer(1,a.sampleRate*d,a.sampleRate),c=b.getChannelData(0);for(let i=0;i<c.length;i++)c[i]=(Math.random()*2-1)*(1-i/c.length);const s=a.createBufferSource(),g=a.createGain();s.buffer=b;g.gain.value=vol||.2;s.connect(g);g.connect(a.destination);s.start(a.currentTime+t)}
+const sndWin=()=>[523,659,784,1047].forEach((f,i)=>tone(f,i*.1,.25,'triangle',.25));
+const sndBig=()=>[523,659,784,1047,1319,1568].forEach((f,i)=>tone(f,i*.09,.4,'triangle',.28));
+const sndLose=()=>tone(200,0,.5,'sawtooth',.15,90);
+const sndTick=()=>tone(900,0,.04,'square',.06);
+function sndSpooky(){tone(60,0,3,'sawtooth',.25,35);tone(62,0,3,'sine',.3,30);[400,380,360].forEach((f,i)=>tone(f,i*.5,1,'sine',.08,f*.5));noise(1.2,1.6,.25);tone(1800,1.0,.6,'sawtooth',.05,300)}
+function sndJackpot(){[523,659,784,1047,1319,1568,2093].forEach((f,i)=>tone(f,i*.08,.5,'square',.14));[0,.5,1,1.5,2].forEach(t=>{tone(784,t+.7,.18,'triangle',.25);tone(1047,t+.85,.3,'triangle',.25)});noise(.6,2,.12)}
+
+
+const SEG=[{n:'💩',nm:'똥',m:0,w:65,c:'#7a5230'},{n:'🪙',nm:'금',m:2,w:25,c:'#e0a800'},{n:'💎',nm:'다이아',m:5,w:8,c:'#2fb4e0'},{n:'🃏',nm:'조커',m:10,w:2,c:'#9b3ad8'}];
+const svg=$('#wheel');let h='';
+SEG.forEach((s,i)=>{const a0=(i*90-90)*Math.PI/180,a1=((i+1)*90-90)*Math.PI/180;
+ h+=`<path d="M0 0 L${98*Math.cos(a0)} ${98*Math.sin(a0)} A98 98 0 0 1 ${98*Math.cos(a1)} ${98*Math.sin(a1)}Z" fill="${s.c}" stroke="#fff" stroke-width="2"/>`;
+ const am=(i*90+45-90)*Math.PI/180;h+=`<text x="${62*Math.cos(am)}" y="${62*Math.sin(am)+9}" font-size="26" text-anchor="middle">${s.n}</text>`;
+ h+=`<text x="${36*Math.cos(am)}" y="${36*Math.sin(am)+4}" font-size="9" font-weight="900" fill="#fff" text-anchor="middle">${s.nm}</text>`});
+h+='<circle r="98" fill="none" stroke="#ffd24a" stroke-width="4"/>';svg.innerHTML=h;
+let rot=0;
+function pick(){let r=Math.random()*100,c=0;for(let i=0;i<4;i++){c+=SEG[i].w;if(r<c)return i}return 0}
+$('#go').onclick=async()=>{if(busy)return;busy=true;$('#go').disabled=true;ac();const bet=betVal();$('#msg').textContent='';
+ const j=await mini('wheel',bet);if(j.err){$('#msg').textContent=j.err;busy=false;$('#go').disabled=false;return}
+ bal=j.before-bet;showBal();push(bal);
+ const i=j.idx,s=SEG[i];
+ const target=360*6+(360-(i*90+45))+(Math.random()*60-30);
+ rot=Math.ceil(rot/360)*360+target;svg.style.transform=`rotate(${rot}deg)`;
+ let tk=0;const iv=setInterval(()=>{sndTick();if(++tk>40)clearInterval(iv)},110);
+ setTimeout(()=>{clearInterval(iv);const win=Math.round(bet*s.m);bal=j.after;showBal();push(bal);
+  if(s.m===0){sndLose();$('#msg').innerHTML='💩 똥! 꽝이에요... (-'+fmt(bet)+')'}
+  else if(s.m>=10){sndBig();$('#msg').innerHTML='🃏 조커!! 10배! +'+fmt(win)}
+  else if(s.m>=5){sndBig();$('#msg').innerHTML='💎 다이아! 5배! +'+fmt(win)}
+  else{sndWin();$('#msg').innerHTML='🪙 금! 2배! +'+fmt(win)}
+  busy=false;$('#go').disabled=false},4800)};
+</script></body></html>
